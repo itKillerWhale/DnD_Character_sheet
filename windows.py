@@ -16,10 +16,10 @@ from ui.shoose_character_window import Ui_MainWindow as ShooseCharacterUI
 from ui.comboboxdialog import Ui_Dialog as ComboBoxDialogUI
 
 
+# ----- Декораторы -----
+# --- Декоратор против зацикливания функций в классе ---
 def anti_looping(func):
     def wrapper(self, *args, **kwargs):
-        # print(self.k, func.__name__)
-
         if self.k != 1: return
 
         self.k -= 1
@@ -31,6 +31,7 @@ def anti_looping(func):
     return wrapper
 
 
+# --- Декоратор пропускающий только нужные данные в функцию ---
 def is_selected(text):
     def decorator(func):
         def wrapper(self, *args, **kwargs):
@@ -61,27 +62,92 @@ def is_selected(text):
     return decorator
 
 
-class ComboBoxDialog(QDialog, ComboBoxDialogUI):
-    def __init__(self, folders: list, parent=None):
-        QDialog.__init__(self, parent=parent)
-        uic.loadUi('ui/comboboxdialog.ui', self)
+# ----- Вспомогательные классы -----
+class Sqlite3Client:
+    def __init__(self, connection: sqlite3.Connection):
+        self.connection = connection
+        self.cursor = connection.cursor()
 
-        for id, name, index in folders:
-            self.comboBox.addItem(name)
+        self.tables = list(
+            map(lambda t: t, self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")))
+
+    def select(self, db_name: str, args: str, filters=None, text_filter=None) -> list:
+        # --- Отлов неправильных значений ---
+        if not (bool(db_name) and bool(args)):
+            raise Exception("Имя или аргументы пустые")
+
+        # --- Работа с данными ---
+        data = list(self.cursor.execute(
+            f"""SELECT {args} FROM {db_name}""" + (f""" WHERE {filters}""" if bool(filters) else "")))
+
+        if len(args.split(", ")) == 1 and args != "*":
+            data = list(map(lambda x: x[0], data))
+
+        if bool(text_filter):
+            data = list(
+                filter(lambda character: any([text_filter in collum.lower() for collum in map(str, character[1:])]),
+                       data))
+
+        return data
+
+    def delete(self, db_name: str, filters: str):
+        # --- Отлов неправильных значений ---
+        if not (bool(db_name) and bool(filters)):
+            raise Exception("Имя или филтры пустые")
+
+        # --- Работа с данными ---
+        self.cursor.execute(f"""DELETE FROM {db_name} WHERE {filters}""")
+
+        self.connection.commit()
+
+    def insert(self, db_name: str, collums_name: [str], collums_values: list):
+        # --- Отлов неправильных значений ---
+        if not (bool(db_name) and bool(collums_name) and bool(collums_values)):
+            raise Exception("Имя или значения пустые")
+
+        if len(collums_name) != len(collums_values):
+            raise ValueError("Кол-во значений не равно")
+
+        # --- Работа с данными ---
+        self.cursor.execute(f"""INSERT INTO {db_name} {tuple(collums_name)} 
+        VALUES ({', '.join(['?'] * len(collums_values))})""", collums_values)
+
+        self.connection.commit()
+
+
+# ----- Измененные виджеты -----
 
 
 class TreeWidgetItem(QTreeWidgetItem):
+    fontCharacters = QFont("MS Shell Dlg 2", 10)
+
     def __init__(self, id, type, *args, **kvargs, ):
         super().__init__(*args, **kvargs)
 
         self.id = id
         self.type = type
 
+        self.characters = []
+
     def get_info(self) -> (int, str):
         return (self.id, self.type)
 
+    def new_character(self, character_id, character_name, character_race, character_class, character_level):
+        if not self.type == "folder":
+            raise Exception("Это не являеться папкой")
+
+        character = TreeWidgetItem(character_id, "character", (character_name, character_race, character_class,
+                                                               str(character_level) + " lvl"))
+        character.setFont(0, TreeWidgetItem.fontCharacters)
+
+        self.characters.append(character)
+
+        self.addChild(character)
+
 
 class TreeWidget(QTreeWidget):
+    fontFolder = QFont("MS Shell Dlg 2", 12)
+
     def __init__(self, window: QMainWindow, *args, **kvargs, ):
         super().__init__(*args, **kvargs)
 
@@ -101,6 +167,8 @@ class TreeWidget(QTreeWidget):
 
         self.menu_treeWidget = QMenu(parent=self)
         self.menu_treeWidget.addAction(window.actionNew_folder)
+
+        self.folders = []
 
     def contextMenuEvent(self, event: QContextMenuEvent):
         widget = self.selectedItems()
@@ -122,12 +190,55 @@ class TreeWidget(QTreeWidget):
             self.menu_treeWidget.move(event.globalX(), event.globalY())
             self.menu_treeWidget.show()
 
+    def new_folder(self, folder_name: str, folder_id: int or None, icon=None) -> TreeWidgetItem:
+        folder = TreeWidgetItem(folder_id, "folder", self)
+        self.addTopLevelItem(folder)
+        if bool(icon): folder.setIcon(0, icon)
+        folder.setText(0, folder_name)
+        folder.setFont(0, TreeWidget.fontFolder)
+
+        self.folders.append(folder)
+
+        return folder
+
+    def get_expanded_folders(self) -> dict:
+        folders_name = list(map(lambda folder: folder.text(0), self.folders))
+        expanded_list = list(map(lambda folder: folder.isExpanded(), self.folders))
+        expanded_folders_dict = dict(zip(folders_name, expanded_list))
+
+        return expanded_folders_dict
+
+    def expend_folders(self, expanded_folders_dict: [TreeWidgetItem]):
+        if not bool(expanded_folders_dict):
+            return
+
+        folders_name = list(map(lambda folder: folder.text(0), self.folders))
+        for folder_name, f in list(expanded_folders_dict.items()):
+            if folder_name in folders_name:
+                self.folders[folders_name.index(folder_name)].setExpanded(f)
+
+    def clear(self):
+        super().clear()
+        self.folders = []
+
+
+# ----- Классы окон -----
+class ComboBoxDialog(QDialog, ComboBoxDialogUI):
+    def __init__(self, folders: list, parent=None):
+        QDialog.__init__(self, parent=parent)
+        uic.loadUi('ui/comboboxdialog.ui', self)
+
+        for id, name, index in folders:
+            self.comboBox.addItem(name)
+
 
 class ShooseCharacter(QMainWindow, ShooseCharacterUI):
     def __init__(self, parent=None):
         QMainWindow.__init__(self)
         uic.loadUi('ui/shoose_character_window.ui', self)
         self.setWindowTitle("Интерактивный лист персонажа")
+
+        self.Characters = Sqlite3Client(sqlite3.connect("db/Сharacters.db"))
 
         self.parent = parent
 
@@ -152,16 +263,12 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
 
-        # self.treeWidget.setMovable(True)
-
         self.update_treeview()
 
-        self.treeWidget.currentItemChanged.connect(self.open_information)
+        self.treeWidget.itemClicked.connect(self.open_information)
         self.treeWidget.itemDoubleClicked.connect(self.open_character)
-        # self.treeWidget.contextMenuEvent.connect()
 
         # --- Настройка кнопок ---
-        self.pushButton_open.clicked.connect(self.open_character)
 
         self.lineEdit_find.textChanged.connect(self.update_treeview)
 
@@ -172,134 +279,64 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
         self.actionOpen.triggered.connect(self.open_character)
         self.actionDelete_folder.triggered.connect(self.delete_folder)
         self.actionAdd_to_folder.triggered.connect(self.add_character_in_folder)
-
-        # self.open_information = selected_item(self.open_information, "character")
+        self.actionDelete_from_folder.triggered.connect(self.delete_character_from_folder)
+        self.actionDelete.triggered.connect(self.delete_character)
 
     def update_treeview(self):
+        Expanded_data = []
+        if bool(self.treeWidget.folders):
+            Expanded_data = self.treeWidget.get_expanded_folders()
+
         self.treeWidget.clear()
-
-        font0 = QFont("MS Shell Dlg 2", 10)
-        # font0.setBold(True)
-
-        fontTop = QFont("MS Shell Dlg 2", 12)
 
         text_filter = self.lineEdit_find.text().lower()
 
-        self.tree = {
-            "All": [],
-        }
-
         # --- Вкладка All ---
-        preview = TreeWidgetItem(None, "All", self.treeWidget)
-        self.treeWidget.addTopLevelItem(preview)
-        icon = QIcon("image/icons/my_files.ico")
-        preview.setIcon(0, icon)
-        preview.setText(0, "All")
-        preview.setFont(0, fontTop)
+        folder = self.treeWidget.new_folder("All", None, icon=QIcon("image/icons/my_files.ico"))
 
-        with sqlite3.connect('db/Сharacters.db') as con:
-            cursor = con.cursor()
-
-            characters = list(cursor.execute(f"""SELECT id, name, race, class, level FROM character_list"""))
-            if bool(text_filter):
-                characters = list(
-                    filter(lambda character: any([text_filter in collum.lower() for collum in map(str, character[1:])]),
-                           characters))
+        characters = self.Characters.select("character_list", "id, name, race, class, level",
+                                            text_filter=text_filter)
 
         for character in characters:
-            character = list(character)
-            character_id = character.pop(0)
-
-            character[3] = str(character[3]) + " lvl"
-
-            Items = TreeWidgetItem(character_id, "character", character)
-            Items.setFont(0, font0)
-
-            preview.addChild(Items)
+            folder.new_character(*character)
 
         # --- Вкладка Likes ---
-        preview = TreeWidgetItem(None, "Likes", self.treeWidget)
-        self.treeWidget.addTopLevelItem(preview)
-        icon = QIcon("image/icons/likes.ico")
-        preview.setIcon(0, icon)
-        preview.setText(0, "Likes")
-        preview.setFont(0, fontTop)
-
-        with sqlite3.connect('db/Сharacters.db') as con:
-            cursor = con.cursor()
-
-            character_id = tuple(map(lambda x: x[0], list(cursor.execute(f"""SELECT id FROM likes"""))))
-
-            if len(character_id) == 1:
-                characters = list(cursor.execute(
-                    f"""SELECT id, name, race, class, level FROM character_list WHERE id = {character_id[0]}"""))
-
-            else:
-                # print(character_id)
-                characters = list(cursor.execute(
-                    f"""SELECT id, name, race, class, level FROM character_list WHERE id in {character_id}"""))
-
-            if bool(text_filter):
-                characters = list(
-                    filter(lambda character: any([text_filter in collum.lower() for collum in map(str, character[1:])]),
-                           characters))
+        folder = self.treeWidget.new_folder("Likes", None, icon=QIcon("image/icons/likes.ico"))
+        character_id = self.Characters.select("likes", "id")
+        characters = self.Characters.select("character_list", "id, name, race, class, level",
+                                            text_filter=text_filter,
+                                            filters=f"id = {character_id[0]}" if len(
+                                                character_id) == 1 else f"id in {tuple(character_id)}"
+                                            )
 
         for character in characters:
-            character = list(character)
-            character_id = character.pop(0)
-
-            character[3] = str(character[3]) + " lvl"
-
-            Items = TreeWidgetItem(character_id, "character", character)
-            Items.setFont(0, font0)
-
-            preview.addChild(Items)
+            folder.new_character(*character)
 
         # --- Остальные вкладки ---
-        with sqlite3.connect('db/Сharacters.db') as con:
-            cursor = con.cursor()
+        folders = self.Characters.select("folders", "*")
+        folders = sorted(folders, key=lambda x: x[-1])
 
-            folders = list(cursor.execute(f"""SELECT * FROM folders"""))
-            folders = sorted(folders, key=lambda x: x[-1])
+        for folder_id, name, index in folders:
+            folder = self.treeWidget.new_folder(name, folder_id)
 
-            for folder_id, name, index in folders:
-                # --- Создание раздела ---
-                preview = TreeWidgetItem(folder_id, "folder", self.treeWidget)
-                self.treeWidget.addTopLevelItem(preview)
-                preview.setText(0, name)
-                preview.setFont(0, fontTop)
+            characters_id = self.Characters.select("characters_in_folder", "character_id",
+                                                   filters=f"folder_id = {folder_id}")
 
-                characters_id = tuple(map(lambda character_id: character_id[0], cursor.execute(
-                    f"""SELECT * FROM characters_in_folder WHERE folder_id = {folder_id}""")))
+            if len(characters_id) == 0:
+                characters = []
 
-                if len(characters_id) == 0:
-                    characters = []
+            elif len(characters_id) > 1:
+                characters = self.Characters.select("character_list", "id, name, race, class, level",
+                                                    filters=f"id in {tuple(characters_id)}")
 
-                elif len(characters_id) > 1:
-                    characters = list(cursor.execute(
-                        f"""SELECT id, name, race, class, level FROM character_list WHERE id in {characters_id}"""))
+            else:
+                characters = self.Characters.select("character_list", "id, name, race, class, level",
+                                                    filters=f"id = {characters_id[0]}")
 
-                else:
-                    characters = list(cursor.execute(
-                        f"""SELECT id, name, race, class, level FROM character_list WHERE id = {characters_id[0]}"""))
+            for character in characters:
+                folder.new_character(*character)
 
-                if bool(text_filter):
-                    characters = list(
-                        filter(lambda character: any(
-                            [text_filter in collum.lower() for collum in map(str, character[1:])]), characters))
-
-                for character in characters:
-                    character = list(character)
-                    character_id = character.pop(0)
-
-                    character[3] = str(character[3]) + " lvl"
-
-                    Items = TreeWidgetItem(character_id, "character", character)
-                    Items.setFont(0, font0)
-
-                    preview.addChild(Items)
-
-        self.treeWidget.expandAll()
+        self.treeWidget.expend_folders(Expanded_data)
 
     def open_information(self, widget: TreeWidgetItem):
         widgets_list = self.treeWidget.selectedItems()
@@ -308,8 +345,6 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
         if widgets_list[0].get_info()[1] != "character":
             return
 
-        # print(self.treeWidget.headerItem())
-        print(self.treeWidget.selectedItems())
         character_id = widgets_list[0].get_info()[0]
 
         with sqlite3.connect('db/Сharacters.db') as con:
@@ -331,9 +366,9 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
         self.label_race.setText(character_dict["race"])
         self.label_level.setText(str(character_dict["level"]) + " lvl")
 
-        pixmap = QPixmap(f"characters/image/{character_id}.png")
+        pixmap = QPixmap(f"image/characters/{character_id}.png")
         if pixmap.isNull():
-            pixmap = QPixmap("characters/image/stub.png")
+            pixmap = QPixmap("image/characters/stub.png")
         self.label_image.setPixmap(
             pixmap.scaled(self.label_image.width(), self.label_image.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
@@ -382,11 +417,9 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
 
         self.dialog = ComboBoxDialog(folders, parent=self)
         ok = self.dialog.exec()
-        print(ok)
 
         if ok:
             folder_id = folders[self.dialog.comboBox.currentIndex()][-1]
-            print(character_id, folder_id)
 
             with sqlite3.connect('db/Сharacters.db') as con:
                 cursor = con.cursor()
@@ -399,8 +432,51 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
 
     @is_selected(text="character")
     def delete_character_from_folder(self):
-        pass
+        widgets_list = self.treeWidget.selectedItems()
+        character_id = widgets_list[0].get_info()[0]
 
+        folder_id = widgets_list[0].parent().get_info()[0]
+
+        with sqlite3.connect('db/Сharacters.db') as con:
+            cursor = con.cursor()
+
+            cursor.execute(
+                f"""DELETE FROM characters_in_folder WHERE character_id = {character_id} AND folder_id = {folder_id}""")
+
+            con.commit()
+
+        self.update_treeview()
+
+    @is_selected(text="character")
+    def delete_character(self):
+        widgets_list = self.treeWidget.selectedItems()
+        character_id = widgets_list[0].get_info()[0]
+
+        with sqlite3.connect('db/Сharacters.db') as con:
+            cursor = con.cursor()
+
+            character_name = list(cursor.execute(f"""SELECT name FROM character_list WHERE id = {character_id} """))[0][
+                0]
+
+        button = QMessageBox.warning(
+            self,
+            "Удаление персонажа",
+            f"Вы хотите удалить персонажа {character_name}.\nУдалить?",
+            buttons=QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            defaultButton=QMessageBox.StandardButton.Cancel,
+        )
+
+        if button == QMessageBox.StandardButton.Ok:
+            with sqlite3.connect('db/Сharacters.db') as con:
+                cursor = con.cursor()
+
+                cursor.execute(f"""DELETE FROM character_list WHERE id = {character_id}""")
+                cursor.execute(f"""DELETE FROM characters_in_folder WHERE character_id = {character_id}""")
+                cursor.execute(f"""DELETE FROM likes WHERE character_id = {character_id}""")
+
+                con.commit()
+
+        self.update_treeview()
 
     # --- Действия с папками ---
 
@@ -415,7 +491,7 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
                 cursor = con.cursor()
 
                 folders = list(map(lambda x: x[0].lower(), cursor.execute(f"""SELECT name FROM folders""")))
-                # print(text.lower, folders)
+
                 if text.lower() in folders:
                     _ = QMessageBox.warning(
                         self,
@@ -428,7 +504,7 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
                     return
 
                 idexes = list(cursor.execute(f"""SELECT folder_index FROM folders"""))
-                print(idexes)
+
                 if bool(idexes):
                     max_index = max(list(map(lambda n: int(n[-1]), idexes)))
                 else:
@@ -441,21 +517,29 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
     @is_selected(text="folder")
     def delete_folder(self):
         widgets_list = self.treeWidget.selectedItems()
-
-        # print(self.treeWidget.headerItem())
-        print(self.treeWidget.selectedItems())
         folder_id = widgets_list[0].get_info()[0]
 
-        with sqlite3.connect('db/Сharacters.db') as con:
-            cursor = con.cursor()
+        button = QMessageBox.warning(
+            self,
+            "Удаление папки",
+            f"Вы хотите удалить папку {widgets_list[0].text(0)}.\nУдалить?",
+            buttons=QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            defaultButton=QMessageBox.StandardButton.Cancel,
+        )
 
-            cursor.execute(f'DELETE FROM folders WHERE id = {folder_id}')
-            cursor.execute(f'DELETE FROM characters_in_folder WHERE folder_id = {folder_id}')
+        if button == QMessageBox.StandardButton.Ok:
+            with sqlite3.connect('db/Сharacters.db') as con:
+                cursor = con.cursor()
 
-            con.commit()
+                cursor.execute(f'DELETE FROM folders WHERE id = {folder_id}')
+                cursor.execute(f'DELETE FROM characters_in_folder WHERE folder_id = {folder_id}')
+
+                con.commit()
 
         self.update_treeview()
 
+    def closeEvent(self, a0):
+        self.Characters.connection.close()
 
 
 # -------------------------------------------------------
@@ -466,6 +550,8 @@ class List(QMainWindow, ListUI):
         QMainWindow.__init__(self)
         uic.loadUi('ui/list.ui', self)
         self.setWindowTitle("Интерактивный лист персонажа")
+
+        self.Characters = Sqlite3Client(sqlite3.connect("db/Сharacters.db"))
 
         if parent:
             parent.close()
@@ -495,9 +581,6 @@ class List(QMainWindow, ListUI):
         generate_name = QKeySequence("Alt+N")
         self.action_name.setShortcut(generate_name)
 
-        # close = QKeySequence("Ctrl+F4")
-        # self.action_close.setShortcut(close)
-
         # --- Подключение кнопок к функциям ---
         self.action_save.triggered.connect(self.save)
         self.action_undo.triggered.connect(self.undo)
@@ -507,8 +590,6 @@ class List(QMainWindow, ListUI):
         self.action_new.triggered.connect(self.new)
 
         self.action_name.triggered.connect(self.generate_name)
-
-        # self.pushButton_add_weapon.clicked.connect(self.add_weapon)
 
         # ----- Списки всех виджетов -----
         # --- checkBoxes ----
@@ -564,35 +645,36 @@ class List(QMainWindow, ListUI):
                                   self.tab_textEdit_inventory, self.tab_textEdit_languages]
 
         # --- dicts ---
-        self.spinBox_stats_to_label_dict = dict(zip(self.spinBox_stats_list, self.label_stats_list))
-        self.spinBox_stats_to_tab_spinBox_stats_dict = dict(zip(self.spinBox_stats_list, self.tab_spinBox_stats_list))
-        self.tab_spinBox_stats_to_spinBox_stats_dict = dict(zip(self.tab_spinBox_stats_list, self.spinBox_stats_list))
 
-        self.lineEdit_to_tab_lineEdit_dict = dict(zip(self.lineEdit_list, self.tab_lineEdit_list))
-        self.tab_lineEdit_to_lineEdit_dict = dict(zip(self.tab_lineEdit_list, self.lineEdit_list))
+        # self.spinBox_stats_to_label_dict = dict(zip(self.spinBox_stats_list, self.label_stats_list))
+        # self.spinBox_stats_to_tab_spinBox_stats_dict = dict(zip(self.spinBox_stats_list, self.tab_spinBox_stats_list))
+        # self.tab_spinBox_stats_to_spinBox_stats_dict = dict(zip(self.tab_spinBox_stats_list, self.spinBox_stats_list))
 
-        self.label_ststs_list_to_spinBox_stats = dict(
-            zip(self.checkBox_skills_list, self.label_ststs_list_for_skills))
+        # self.lineEdit_to_tab_lineEdit_dict = dict(zip(self.lineEdit_list, self.tab_lineEdit_list))
+        # self.tab_lineEdit_to_lineEdit_dict = dict(zip(self.tab_lineEdit_list, self.lineEdit_list))
 
-        self.checkBox_saving_throw_to_label_stats_list = dict(
-            zip(self.checkBox_saving_throw_list, self.label_stats_list))
+        # self.label_ststs_list_to_spinBox_stats = dict(
+        #     zip(self.checkBox_skills_list, self.label_ststs_list_for_skills))
 
-        self.checkBox_saving_throw_to_tab_checkBox_saving_throw = dict(
-            zip(self.checkBox_saving_throw_list, self.tab_checkBox_saving_throw_list))
-        self.tab_checkBox_saving_throw_to_checkBox_saving_throw = dict(
-            zip(self.tab_checkBox_saving_throw_list, self.checkBox_saving_throw_list))
+        # self.checkBox_saving_throw_to_label_stats_list = dict(
+        #     zip(self.checkBox_saving_throw_list, self.label_stats_list))
 
-        self.skill_en_to_skill_checkBox = dict(zip(SKILLS_EN, self.checkBox_skills_list))
-        self.skill_ru_to_skill_checkBox = dict(zip(SKILLS_RU, self.checkBox_skills_list))
+        # self.checkBox_saving_throw_to_tab_checkBox_saving_throw = dict(
+        #     zip(self.checkBox_saving_throw_list, self.tab_checkBox_saving_throw_list))
+        # self.tab_checkBox_saving_throw_to_checkBox_saving_throw = dict(
+        #     zip(self.tab_checkBox_saving_throw_list, self.checkBox_saving_throw_list))
 
-        self.spinBox_money_to_tab_spinBox_money_dict = dict(zip(self.spinBox_money_list, self.tab_spinBox_money_list))
-        self.tab_spinBox_money_to_spinBox_money_dict = dict(zip(self.tab_spinBox_money_list, self.spinBox_money_list))
+        # self.skill_en_to_skill_checkBox = dict(zip(SKILLS_EN, self.checkBox_skills_list))
+        # self.skill_ru_to_skill_checkBox = dict(zip(SKILLS_RU, self.checkBox_skills_list))
 
-        self.textEdit_to_tab_textEdit_dict = dict(zip(self.textEdit_list, self.tab_textEdit_list))
-        self.tab_textEdit_to_textEdit_dict = dict(zip(self.tab_textEdit_list, self.textEdit_list))
+        # self.spinBox_money_to_tab_spinBox_money_dict = dict(zip(self.spinBox_money_list, self.tab_spinBox_money_list))
+        # self.tab_spinBox_money_to_spinBox_money_dict = dict(zip(self.tab_spinBox_money_list, self.spinBox_money_list))
 
-        self.stats_ru_to_spinBox_stats = dict(zip(STATS_RU, self.spinBox_stats_list))
-        self.stats_en_to_spinBox_stats = dict(zip(STATS_EN, self.spinBox_stats_list))
+        # self.textEdit_to_tab_textEdit_dict = dict(zip(self.textEdit_list, self.tab_textEdit_list))
+        # self.tab_textEdit_to_textEdit_dict = dict(zip(self.tab_textEdit_list, self.textEdit_list))
+
+        # self.stats_ru_to_spinBox_stats = dict(zip(STATS_RU, self.spinBox_stats_list))
+        # self.stats_en_to_spinBox_stats = dict(zip(STATS_EN, self.spinBox_stats_list))
 
         # ----- Соеденение всех обновлений с функциями -----
         for lineEdit in self.lineEdit_list + self.tab_lineEdit_list:
@@ -616,7 +698,6 @@ class List(QMainWindow, ListUI):
         self.spinBox_class_level.valueChanged.connect(self.update_xp)
         self.spinBox_class_level.valueChanged.connect(self.update_skills)
         self.tab_spinBox_class_level.valueChanged.connect(self.update_xp)
-        # self.spinBox_class_level.valueChanged.connect(self.update_xp)
 
         self.comboBox_hp_cube.activated.connect(self.update_hp_cube)
         self.tab_comboBox_hp_cube.activated.connect(self.update_hp_cube)
@@ -633,8 +714,6 @@ class List(QMainWindow, ListUI):
 
         self.spinBox_xp.valueChanged.connect(self.update_level)
         self.tab_spinBox_xp.valueChanged.connect(self.update_level)
-        # self.spinBox_xp.valueChanged.connect(self.update_xp)
-        # self.tab_spinBox_xp.valueChanged.connect(self.update_level)
 
         self.pushButton_random_stats.clicked.connect(self.set_randon_stats)
         self.pushButton_full_random_stats.clicked.connect(self.set_full_random_stats)
@@ -673,13 +752,16 @@ class List(QMainWindow, ListUI):
 
     # ----- Вспомогательные функции -----
     def get_stat_bonus(self, stat: str) -> int:
+        stats_ru_to_spinBox_stats = dict(zip(STATS_RU, self.spinBox_stats_list))
+        stats_en_to_spinBox_stats = dict(zip(STATS_EN, self.spinBox_stats_list))
+
         stat = stat.capitalize()
 
         if stat in STATS_RU:
-            value = self.stats_ru_to_spinBox_stats[stat].value()
+            value = stats_ru_to_spinBox_stats[stat].value()
 
         else:
-            value = self.stats_en_to_spinBox_stats[stat].value()
+            value = stats_en_to_spinBox_stats[stat].value()
 
         stat_bonus = (value - 10) // 2
 
@@ -708,7 +790,6 @@ class List(QMainWindow, ListUI):
         return character
 
     # ----- Функции обновления значений в полях -----
-    # @can_undo_redo
     def open_character(self, id=None):
         if not bool(id):
             pass
@@ -766,30 +847,37 @@ class List(QMainWindow, ListUI):
         self.textEdit_attachments.setPlainText(character_dict["attachments"])
         self.textEdit_vices.setPlainText(character_dict["vices"])
 
-        # print(self.label_image.width(), self.label_image.height())
-        pixmap = QPixmap(f"characters/image/{self.id}.png")
+        pixmap = QPixmap(f"image/characters/{self.id}.png")
         if pixmap.isNull():
-            pixmap = QPixmap("characters/image/stub.png")
+            pixmap = QPixmap("image/characters/stub.png")
         self.label_image.setPixmap(
             pixmap.scaled(self.label_image.width(), self.label_image.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
     def update_stat(self):
+        # --- dicts ---
+        spinBox_stats_to_label_dict = dict(zip(self.spinBox_stats_list, self.label_stats_list))
+        spinBox_stats_to_tab_spinBox_stats_dict = dict(zip(self.spinBox_stats_list, self.tab_spinBox_stats_list))
+        tab_spinBox_stats_to_spinBox_stats_dict = {v: k for k, v in spinBox_stats_to_tab_spinBox_stats_dict.items()}
+
         sender = self.sender()
         if sender in self.spinBox_stats_list:
-            self.spinBox_stats_to_tab_spinBox_stats_dict[sender].setValue(sender.value())
+            spinBox_stats_to_tab_spinBox_stats_dict[sender].setValue(sender.value())
         else:
-            self.tab_spinBox_stats_to_spinBox_stats_dict[sender].setValue(sender.value())
-            sender = self.tab_spinBox_stats_to_spinBox_stats_dict[sender]
+            tab_spinBox_stats_to_spinBox_stats_dict[sender].setValue(sender.value())
+            sender = tab_spinBox_stats_to_spinBox_stats_dict[sender]
 
-        self.spinBox_stats_to_label_dict[sender].setText(str((sender.value() - 10) // 2))
+        spinBox_stats_to_label_dict[sender].setText(str((sender.value() - 10) // 2))
 
         self.label_initiative.setText(self.label_dexterity.text())
 
         self.update_skills(self)
 
-    # @can_undo_redo
     @anti_looping
     def update_skills(self):
+        # --- dict ---
+        label_ststs_list_to_spinBox_stats = dict(zip(self.checkBox_skills_list, self.label_ststs_list_for_skills))
+        checkBox_saving_throw_to_label_stats_list = dict(zip(self.checkBox_saving_throw_list, self.label_stats_list))
+
         # Вытаскиваем значения бонуса мастерства и ставим его
         skill_bonus = SKILLS_BONUS_DICT[self.spinBox_class_level.value()]
         self.label_skill_bonus.setText("+ " + str(skill_bonus))
@@ -797,7 +885,7 @@ class List(QMainWindow, ListUI):
         # Обновляем спасброски
         for checkBox_saving_throw in self.checkBox_saving_throw_list:
             # Ищем значение для спасбросков (в словаре) и переводим в число
-            n = int(self.checkBox_saving_throw_to_label_stats_list[checkBox_saving_throw].text())
+            n = int(checkBox_saving_throw_to_label_stats_list[checkBox_saving_throw].text())
 
             # Если мы владеем спасброском прибавляем бонус мастерста
             if checkBox_saving_throw.isChecked():
@@ -809,10 +897,9 @@ class List(QMainWindow, ListUI):
         # Обновляем скилы
         for checkBox_skill in self.checkBox_skills_list:
             # Ищем значение для скилов (в словаре) и переводим в число
-            n = int(self.label_ststs_list_to_spinBox_stats[checkBox_skill].text())
+            n = int(label_ststs_list_to_spinBox_stats[checkBox_skill].text())
 
             # Если мы владеем скилом прибавляем бонус мастерста
-            # print(checkBox_skill.isChecked())
             if checkBox_skill.isChecked():
                 n += skill_bonus
 
@@ -836,36 +923,39 @@ class List(QMainWindow, ListUI):
         self.label_passive_perception.setText(str(passive_perception))
 
         # # Подключаем сигнал от tab_textEdit_skills обратно
-        # self.tab_textEdit_skills.textChanged.connect(self.update_skills_tab)
 
         self.k += 1
         self.update_spellcasting_list(self)
         self.k -= 1
 
-    # @can_undo_redo
     @anti_looping
     def update_skills_tab(self):
+        skill_en_to_skill_checkBox = dict(zip(SKILLS_EN, self.checkBox_skills_list))
+        skill_ru_to_skill_checkBox = dict(zip(SKILLS_RU, self.checkBox_skills_list))
+
         skills = self.tab_textEdit_skills.toPlainText()
-        # print(self.skill_ru_to_skill_checkBox)
 
         for skill in SKILLS_EN:
             if skill in skills:
-                self.skill_en_to_skill_checkBox[skill].setChecked(True)
+                skill_en_to_skill_checkBox[skill].setChecked(True)
 
         for skill in SKILLS_RU:
             if skill in skills:
-                self.skill_ru_to_skill_checkBox[skill].setChecked(True)
+                skill_ru_to_skill_checkBox[skill].setChecked(True)
 
-    # @can_undo_redo
     @anti_looping
     def update_saving_throws(self):
+        checkBox_saving_throw_to_tab_checkBox_saving_throw = dict(
+            zip(self.checkBox_saving_throw_list, self.tab_checkBox_saving_throw_list))
+        tab_checkBox_saving_throw_to_checkBox_saving_throw = {v: k for k, v in
+                                                              checkBox_saving_throw_to_tab_checkBox_saving_throw.items()}
+
         sender = self.sender()
         if sender in self.checkBox_saving_throw_list:
-            self.checkBox_saving_throw_to_tab_checkBox_saving_throw[sender].setChecked(sender.isChecked())
+            checkBox_saving_throw_to_tab_checkBox_saving_throw[sender].setChecked(sender.isChecked())
         elif sender in self.tab_checkBox_saving_throw_list:
-            self.tab_checkBox_saving_throw_to_checkBox_saving_throw[sender].setChecked(sender.isChecked())
+            tab_checkBox_saving_throw_to_checkBox_saving_throw[sender].setChecked(sender.isChecked())
 
-    # @can_undo_redo
     @anti_looping
     def update_spellcasting_list(self):
         main_stat = self.spellcasting_list_comboBox_main_stat.currentText()
@@ -875,7 +965,6 @@ class List(QMainWindow, ListUI):
         self.label_saving_throw_difficulty.setText(str(8 + stat_bonus + level_bonus))
         self.label_attack_roll_bonus.setText("+ " + str(stat_bonus + level_bonus))
 
-    # @can_undo_redo
     @anti_looping
     def update_hp_cube(self):
         sender = self.sender()
@@ -893,13 +982,6 @@ class List(QMainWindow, ListUI):
         self.label_hp_cube.setText(text)
         self.tab_label_hp_cube.setText(text)
 
-        # constitution_bonus = self.label_constitution.text()
-        # constitution_bonus = int(
-        #     constitution_bonus.replace("+", "") if "+" in constitution_bonus else constitution_bonus)
-        #
-        # self.spinBox_hp.setValue(int(hp_cube.replace("d", "")) + constitution_bonus)
-
-    # @can_undo_redo
     @anti_looping
     def update_xp(self):
         sender = self.sender()
@@ -907,19 +989,12 @@ class List(QMainWindow, ListUI):
             self.tab_spinBox_class_level.setValue(self.spinBox_class_level.value())
         elif sender == self.tab_spinBox_class_level:
             self.spinBox_class_level.setValue(self.tab_spinBox_class_level.value())
-        # elif sender == self.spinBox_xp:
-        #     self.spinBox_xp.setValue(self.tab_spinBox_xp.value())
-        #     return
-        # else:
-        #     self.tab_spinBox_xp.setValue(self.spinBox_xp.value())
-        #     return
 
         xp = LEVEL_TO_XP_DICT[self.spinBox_class_level.value()]
 
         if self.spinBox_xp.value() != xp: self.spinBox_xp.setValue(xp)
         if self.tab_spinBox_xp.value() != xp: self.tab_spinBox_xp.setValue(xp)
 
-    # @can_undo_redo
     @anti_looping
     def update_level(self):
         sender = self.sender()
@@ -949,16 +1024,17 @@ class List(QMainWindow, ListUI):
         self.update_skills(self)
         self.k -= 1
 
-    # @can_undo_redo
     @anti_looping
     def update_lineEdit(self):
+        lineEdit_to_tab_lineEdit_dict = dict(zip(self.lineEdit_list, self.tab_lineEdit_list))
+        tab_lineEdit_to_lineEdit_dict = {v: k for k, v in lineEdit_to_tab_lineEdit_dict.items()}
+
         sender = self.sender()
         if sender in self.lineEdit_list:
-            self.lineEdit_to_tab_lineEdit_dict[sender].setText(sender.text())
+            lineEdit_to_tab_lineEdit_dict[sender].setText(sender.text())
         else:
-            self.tab_lineEdit_to_lineEdit_dict[sender].setText(sender.text())
+            tab_lineEdit_to_lineEdit_dict[sender].setText(sender.text())
 
-    # @can_undo_redo
     @anti_looping
     def update_hp(self):
         sender = self.sender()
@@ -970,7 +1046,6 @@ class List(QMainWindow, ListUI):
 
         self.label_max_hp.setText(str(self.spinBox_hp.value()))
 
-    # @can_undo_redo
     @anti_looping
     def update_speed(self):
         sender = self.sender()
@@ -981,7 +1056,6 @@ class List(QMainWindow, ListUI):
         else:
             self.spinBox_speed.setValue(self.tab_spinBox_speed.value())
 
-    # @can_undo_redo
     @anti_looping
     def update_armor_class(self):
         sender = self.sender()
@@ -992,31 +1066,32 @@ class List(QMainWindow, ListUI):
         else:
             self.spinBox_armor_class.setValue(self.tab_spinBox_armor_class.value())
 
-    # @can_undo_redo
     @anti_looping
     def update_money(self):
+        spinBox_money_to_tab_spinBox_money_dict = dict(zip(self.spinBox_money_list, self.tab_spinBox_money_list))
+        tab_spinBox_money_to_spinBox_money_dict = {v: k for k, v in spinBox_money_to_tab_spinBox_money_dict.items()}
+
         sender = self.sender()
 
         if sender in self.spinBox_money_list:
-            self.spinBox_money_to_tab_spinBox_money_dict[sender].setValue(sender.value())
+            spinBox_money_to_tab_spinBox_money_dict[sender].setValue(sender.value())
 
         elif sender in self.tab_spinBox_money_list:
-            self.tab_spinBox_money_to_spinBox_money_dict[sender].setValue(sender.value())
+            tab_spinBox_money_to_spinBox_money_dict[sender].setValue(sender.value())
 
-    # @can_undo_redo
     @anti_looping
     def update_textEdit(self):
+        textEdit_to_tab_textEdit_dict = dict(zip(self.textEdit_list, self.tab_textEdit_list))
+        tab_textEdit_to_textEdit_dict = {v: k for k, v in textEdit_to_tab_textEdit_dict.items()}
+
         sender = self.sender()
 
         if sender in self.textEdit_list:
-            self.textEdit_to_tab_textEdit_dict[sender].setPlainText(sender.toPlainText())
+            textEdit_to_tab_textEdit_dict[sender].setPlainText(sender.toPlainText())
 
         elif sender in self.tab_textEdit_list:
-            self.tab_textEdit_to_textEdit_dict[sender].setPlainText(sender.toPlainText())
+            tab_textEdit_to_textEdit_dict[sender].setPlainText(sender.toPlainText())
 
-        # self.k += 1
-
-    # @can_undo_redo
     @anti_looping
     def update_inspiration(self):
         self.comboBox_inspiration.setEnabled(self.checkBox_inspiration.isChecked())
@@ -1052,7 +1127,6 @@ class List(QMainWindow, ListUI):
     # --- Кнопки статов ---
 
     # set_randon_stats выставляет случайные статы опираясь на распределение 1 лвл
-    # @can_undo_redo
     def set_randon_stats(self):
         # способ распределения статов засчет очков которые тратяться на статы
         points = 27
@@ -1072,12 +1146,10 @@ class List(QMainWindow, ListUI):
             self.spinBox_stats_list[i].setValue(stats_list[i])
 
     # set_full_random_stats выставляет случайные статы (от 1 до 20)
-    # @can_undo_redo
     def set_full_random_stats(self):
         for i in range(6):
             self.spinBox_stats_list[i].setValue(randint(1, 20))
 
-    # @can_undo_redo
     def set_average_hp(self):
         k = self.spinBox_class_level.value()
         hp_cube = int(self.comboBox_hp_cube.currentText().replace("d", ""))
@@ -1089,7 +1161,6 @@ class List(QMainWindow, ListUI):
 
         self.spinBox_hp.setValue(hp)
 
-    # @can_undo_redo
     def set_level_random_hp(self):
         k = self.spinBox_class_level.value()
         hp_cube = int(self.comboBox_hp_cube.currentText().replace("d", ""))
@@ -1101,9 +1172,7 @@ class List(QMainWindow, ListUI):
 
         self.spinBox_hp.setValue(hp)
 
-    # @can_undo_redo
     def set_full_random_hp(self):
-        # print("set_full_random_hp")
         k = self.spinBox_class_level.value()
         hp_cube = int(self.comboBox_hp_cube.currentText().replace("d", ""))
         constitution_bonus = self.label_constitution.text()
@@ -1114,7 +1183,6 @@ class List(QMainWindow, ListUI):
 
         self.spinBox_hp.setValue(hp)
 
-    # @can_undo_redo
     def shoose_image(self):
         filter_file = "Images (*.png *.jpeg .jpg)"
         get_photo = QFileDialog().getOpenFileName(
@@ -1124,7 +1192,7 @@ class List(QMainWindow, ListUI):
             filter_file
         )[0]
 
-        path_save = 'characters/image/'
+        path_save = 'image/characters/'
 
         if get_photo:
             os.makedirs(path_save, exist_ok=True)
@@ -1134,18 +1202,17 @@ class List(QMainWindow, ListUI):
 
             pixmap = QPixmap(get_photo)
             if pixmap.isNull():
-                pixmap = QPixmap("characters/image/stub.png")
+                pixmap = QPixmap("image/characters/stub.png")
             self.label_image.setPixmap(
                 pixmap.scaled(self.label_image.width(), self.label_image.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
-    # @can_undo_redo
     def delete_image(self):
         try:
-            os.remove(f"characters/image/{self.id}.png")
+            os.remove(f"image/characters/{self.id}.png")
         except FileNotFoundError:
             pass
 
-        pixmap = QPixmap("characters/image/stub.png")
+        pixmap = QPixmap("image/characters/stub.png")
         self.label_image.setPixmap(
             pixmap.scaled(self.label_image.width(), self.label_image.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
@@ -1180,14 +1247,14 @@ class List(QMainWindow, ListUI):
         elif QMessageBox.StandardButton.Save:
             self.save()
 
+        self.Characters.connection.close()
         self.window = ShooseCharacter(parent=self)
         self.window.show()
 
     def resizeEvent(self, a0):
-        # print(self.label_image.width(), self.label_image.height())
-        pixmap = QPixmap(f"characters/image/{self.id}.png")
+        pixmap = QPixmap(f"image/characters/{self.id}.png")
         if pixmap.isNull():
-            pixmap = QPixmap("characters/image/stub.png")
+            pixmap = QPixmap("image/characters/stub.png")
         self.label_image.setPixmap(
             pixmap.scaled(self.label_image.width(), self.label_image.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
@@ -1228,11 +1295,9 @@ class List(QMainWindow, ListUI):
                 con.commit()
 
     def redo(self):
-        # print("redo")
         self.UndoStack.redo()
 
     def undo(self):
-        # print("undo")
         self.UndoStack.undo()
 
     def open(self):
