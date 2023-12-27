@@ -10,6 +10,22 @@ def my_excepthook(type, value, tback):
     sys.__excepthook__(type, value, tback)
 
 
+# app = QApplication(sys.argv)
+#     ex = MainWindow()
+#
+#     if theme:
+#         qtmodern.styles.dark(app)
+#
+#     else:
+#         qtmodern.styles.light(app)
+#
+#     mw = qtmodern.windows.ModernWindow(ex)
+#     mw.move(200, 200)
+#
+#     mw.show()
+#     sys.excepthook = except_hook
+#     app.exec_()
+
 sys.excepthook = my_excepthook
 
 app = QApplication(sys.argv)
@@ -19,6 +35,7 @@ app.setWindowIcon(QIcon('image/icons/main.ico'))
 window = ShooseCharacter()
 window.show()
 
+sys.excepthook = my_excepthook
 app.exec()
 
 # treeWidget->header()->setStretchLastSection(false);

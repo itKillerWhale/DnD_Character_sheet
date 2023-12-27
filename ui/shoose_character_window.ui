@@ -50,6 +50,105 @@
     <item row="0" column="0">
      <widget class="QLineEdit" name="lineEdit_find"/>
     </item>
+    <item row="2" column="0">
+     <layout class="QHBoxLayout" name="horizontalLayout">
+      <property name="spacing">
+       <number>3</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="label_3">
+        <property name="maximumSize">
+         <size>
+          <width>100</width>
+          <height>16777215</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>10</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>Сортировать по:</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QComboBox" name="comboBox">
+        <property name="font">
+         <font>
+          <pointsize>10</pointsize>
+         </font>
+        </property>
+        <property name="layoutDirection">
+         <enum>Qt::LeftToRight</enum>
+        </property>
+        <item>
+         <property name="text">
+          <string>Имени</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Расе</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Классу</string>
+         </property>
+        </item>
+        <item>
+         <property name="text">
+          <string>Уровню</string>
+         </property>
+        </item>
+       </widget>
+      </item>
+      <item>
+       <widget class="QPushButton" name="pushButton_is_reversed">
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>25</width>
+          <height>25</height>
+         </size>
+        </property>
+        <property name="font">
+         <font>
+          <pointsize>12</pointsize>
+          <weight>50</weight>
+          <bold>false</bold>
+         </font>
+        </property>
+        <property name="cursor">
+         <cursorShape>ArrowCursor</cursorShape>
+        </property>
+        <property name="layoutDirection">
+         <enum>Qt::LeftToRight</enum>
+        </property>
+        <property name="text">
+         <string>↑</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item row="2" column="1">
+     <widget class="QPushButton" name="pushButton_open">
+      <property name="text">
+       <string>Открыть</string>
+      </property>
+     </widget>
+    </item>
     <item row="1" column="1">
      <widget class="QGroupBox" name="groupBox">
       <property name="minimumSize">
@@ -480,31 +579,6 @@
         </layout>
        </item>
       </layout>
-     </widget>
-    </item>
-    <item row="2" column="0">
-     <layout class="QHBoxLayout" name="horizontalLayout">
-      <item>
-       <widget class="QPushButton" name="pushButton_add_folder">
-        <property name="text">
-         <string>Добавить папку</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="pushButton_add_in_folder">
-        <property name="text">
-         <string>Добавить в папку</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </item>
-    <item row="2" column="1">
-     <widget class="QPushButton" name="pushButton_open">
-      <property name="text">
-       <string>Открыть</string>
-      </property>
      </widget>
     </item>
    </layout>

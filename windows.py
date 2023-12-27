@@ -7,7 +7,7 @@ from PyQt6 import uic
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QUndoStack, QKeySequence, QPixmap, QIcon, QFont, QContextMenuEvent, QAction
 from PyQt6.QtWidgets import QMessageBox, QMainWindow, QGroupBox, QGridLayout, QLineEdit, QScrollArea, QFileDialog, \
-    QTreeWidgetItem, QHeaderView, QInputDialog, QTreeWidget, QMenu, QDialog
+    QTreeWidgetItem, QHeaderView, QInputDialog, QTreeWidget, QMenu, QDialog, QPushButton
 
 from constants import *
 
@@ -71,7 +71,7 @@ class Sqlite3Client:
         self.tables = list(
             map(lambda t: t, self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")))
 
-    def select(self, db_name: str, args: str, filters=None, text_filter=None) -> list:
+    def select(self, db_name: str, args: str, filters=None, text_filter=None, sort=None, reversed=False) -> list:
         # --- Отлов неправильных значений ---
         if not (bool(db_name) and bool(args)):
             raise Exception("Имя или аргументы пустые")
@@ -87,6 +87,12 @@ class Sqlite3Client:
             data = list(
                 filter(lambda character: any([text_filter in collum.lower() for collum in map(str, character[1:])]),
                        data))
+
+        if bool(sort):
+            data = list(sorted(data, key=lambda x: x[args.split(", ").index(sort)]))
+
+        if reversed:
+            data = data[::-1]
 
         return data
 
@@ -172,11 +178,14 @@ class TreeWidget(QTreeWidget):
 
     def contextMenuEvent(self, event: QContextMenuEvent):
         widget = self.selectedItems()
+
         if not bool(widget):
             self.menu_treeWidget.move(event.globalX(), event.globalY())
             self.menu_treeWidget.show()
 
-        id, type = widget[0].get_info()
+        widget = widget[0]
+
+        id, type = widget.get_info()
 
         if type == "character":
             self.menu_character.move(event.globalX(), event.globalY())
@@ -247,6 +256,10 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
 
         self.character_id = None
 
+        # self.button = QPushButton("^")
+        # self.button.move(30,30)
+        # self.button.show()
+
         # --- Настройка и обновление TreeView ---
         self.treeWidget = TreeWidget(self)
 
@@ -282,6 +295,11 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
         self.actionDelete_from_folder.triggered.connect(self.delete_character_from_folder)
         self.actionDelete.triggered.connect(self.delete_character)
 
+        self.comboBox.activated.connect(self.update_treeview)
+        self.pushButton_is_reversed.clicked.connect(
+            lambda: self.pushButton_is_reversed.setText("↑" if self.pushButton_is_reversed.text() == "↓" else "↓"))
+        self.pushButton_is_reversed.clicked.connect(self.update_treeview)
+
     def update_treeview(self):
         Expanded_data = []
         if bool(self.treeWidget.folders):
@@ -290,12 +308,14 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
         self.treeWidget.clear()
 
         text_filter = self.lineEdit_find.text().lower()
+        sort = "name, race, class, level".split(", ")[self.comboBox.currentIndex()]
+        is_reversed = self.pushButton_is_reversed.text() == "↓"
 
         # --- Вкладка All ---
         folder = self.treeWidget.new_folder("All", None, icon=QIcon("image/icons/my_files.ico"))
 
         characters = self.Characters.select("character_list", "id, name, race, class, level",
-                                            text_filter=text_filter)
+                                            text_filter=text_filter, sort=sort, reversed=is_reversed)
 
         for character in characters:
             folder.new_character(*character)
@@ -306,8 +326,8 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
         characters = self.Characters.select("character_list", "id, name, race, class, level",
                                             text_filter=text_filter,
                                             filters=f"id = {character_id[0]}" if len(
-                                                character_id) == 1 else f"id in {tuple(character_id)}"
-                                            )
+                                                character_id) == 1 else f"id in {tuple(character_id)}",
+                                            sort=sort, reversed=is_reversed)
 
         for character in characters:
             folder.new_character(*character)
@@ -327,7 +347,8 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
 
             elif len(characters_id) > 1:
                 characters = self.Characters.select("character_list", "id, name, race, class, level",
-                                                    filters=f"id in {tuple(characters_id)}")
+                                                    filters=f"id in {tuple(characters_id)}", sort=sort,
+                                                    reversed=is_reversed)
 
             else:
                 characters = self.Characters.select("character_list", "id, name, race, class, level",
