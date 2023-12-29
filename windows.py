@@ -441,6 +441,8 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
 
         if ok:
             folder_id = folders[self.dialog.comboBox.currentIndex()][-1]
+            print(folders)
+            print(folder_id)
 
             with sqlite3.connect('db/Сharacters.db') as con:
                 cursor = con.cursor()
@@ -524,14 +526,16 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
 
                     return
 
-                idexes = list(cursor.execute(f"""SELECT folder_index FROM folders"""))
+                idexes = list(map(lambda n: n[0], cursor.execute(f"""SELECT folder_index FROM folders""")))
+                print(idexes)
 
                 if bool(idexes):
-                    max_index = max(list(map(lambda n: int(n[-1]), idexes)))
+                    index = max(idexes) + 1
                 else:
-                    max_index = 1
+                    index = 1
 
-                cursor.execute(f"""INSERT INTO folders (name, folder_index) VALUES (?, ?)""", (text, max_index))
+                print(index)
+                cursor.execute(f"""INSERT INTO folders (name, folder_index) VALUES (?, ?)""", (text, index))
 
         self.update_treeview()
 
