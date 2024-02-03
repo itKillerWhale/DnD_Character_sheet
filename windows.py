@@ -14,6 +14,7 @@ from constants import *
 from ui.list import Ui_MainWindow as ListUI
 from ui.shoose_character_window import Ui_MainWindow as ShooseCharacterUI
 from ui.comboboxdialog import Ui_Dialog as ComboBoxDialogUI
+from ui.shoose_spell_window import Ui_MainWindow as ShooseSpellUI
 
 
 # ----- Декораторы -----
@@ -72,6 +73,7 @@ class Sqlite3Client:
             map(lambda t: t, self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")))
 
     def select(self, db_name: str, args: str, filters=None, text_filter=None, sort=None, reversed=False) -> list:
+        print(filters)
         # --- Отлов неправильных значений ---
         if not (bool(db_name) and bool(args)):
             raise Exception("Имя или аргументы пустые")
@@ -111,6 +113,7 @@ class Sqlite3Client:
         if not (bool(db_name) and bool(collums_name) and bool(collums_values)):
             raise Exception("Имя или значения пустые")
 
+        print()
         if len(collums_name) != len(collums_values):
             raise ValueError("Кол-во значений не равно")
 
@@ -134,6 +137,7 @@ class TreeWidgetItem(QTreeWidgetItem):
         self.type = type
 
         self.characters = []
+        self.spells = []
 
     def get_info(self) -> (int, str):
         return (self.id, self.type)
@@ -149,6 +153,18 @@ class TreeWidgetItem(QTreeWidgetItem):
         self.characters.append(character)
 
         self.addChild(character)
+
+    def new_spell(self, spell_id, spell_name, spell_level, spell_school):
+        if not self.type == "folder":
+            raise Exception("Это не являеться папкой")
+
+        spell = TreeWidgetItem(spell_id, "spell", (
+            spell_name, spell_school.capitalize(), str(spell_level) + " уровень" if spell_level != 0 else "Заговор"))
+        spell.setFont(0, TreeWidgetItem.fontCharacters)
+
+        self.spells.append(spell)
+
+        self.addChild(spell)
 
 
 class TreeWidget(QTreeWidget):
@@ -241,11 +257,210 @@ class ComboBoxDialog(QDialog, ComboBoxDialogUI):
             self.comboBox.addItem(name)
 
 
+class ShooseSpell(QMainWindow, ShooseSpellUI):
+    def __init__(self, parent=None):
+        QMainWindow.__init__(self)
+        uic.loadUi('ui/shoose_spell_window.ui', self)
+        self.setWindowTitle("Заклинания")
+
+        self.Spells = Sqlite3Client(sqlite3.connect("db/D&D.db"))
+
+        self.verticalLayout_2.maximumSize().setWidth(480)
+
+        # --- treeWidget ---
+        self.treeWidget = TreeWidget(self)
+        self.centralwidget.layout().addWidget(self.treeWidget, 1, 0)
+
+        self.treeWidget.setColumnCount(3)
+        header = self.treeWidget.header()
+        self.treeWidget.setHeaderLabels(["Название", "Школа", "Уровень"])
+
+        header.resizeSection(1, 10)
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+
+        # --- Настройка фильтров ---
+        schools = set()
+        for spell_stat in self.Spells.select("spells", "school"):
+            schools.add(spell_stat)
+
+        schools = sorted(list(schools))
+        self.comboBox_school.addItems(schools)
+        self.index_to_school_dict = dict(zip(range(1, len(schools) + 1), schools))
+
+        classes = set()
+        for spell_classes in self.Spells.select("spells", "classes"):
+            for spell_class in spell_classes.split(", "):
+                if not bool(spell_class):
+                    continue
+                spell_class = spell_class.replace("TCE", "").capitalize()
+                classes.add(spell_class)
+
+        classes = sorted(list(classes))
+        self.comboBox_class.addItems(classes)
+        self.index_to_classes_dict = dict(zip(range(1, len(classes) + 1), classes))
+
+        # --- Настройка сигналов ---
+
+        self.comboBox.activated.connect(self.update_treeview)
+
+        self.lineEdit_find.textChanged.connect(self.update_treeview)
+
+        self.update_treeview()
+
+    def update_treeview(self):
+        Expanded_data = []
+        if bool(self.treeWidget.folders):
+            Expanded_data = self.treeWidget.get_expanded_folders()
+
+        self.treeWidget.clear()
+
+        text_filter = self.lineEdit_find.text().lower()
+        # sort = "name, race, class, level".split(", ")[self.comboBox.currentIndex()]
+        is_reversed = self.pushButton_is_reversed.text() == "↓"
+
+        # --- Вкладка Likes ---
+        # folder = self.treeWidget.new_folder("Likes", None, icon=QIcon("image/icons/likes.ico"))
+        # character_id = self.Characters.select("likes", "id")
+        # characters = self.Characters.select("character_list", "id, name, race, class, level",
+        #                                     text_filter=text_filter,
+        #                                     filters=f"id = {character_id[0]}" if len(
+        #                                         character_id) == 1 else f"id in {tuple(character_id)}",
+        #                                     sort=sort, reversed=is_reversed)
+        #
+        # for character in characters:
+        #     folder.new_character(*character)
+
+        # --- Остальные вкладки ---
+        index_to_stat_dict = {1: "level", 2: "school"}
+        currentIndex = self.comboBox.currentIndex()
+        if currentIndex == 0:
+            folder = self.treeWidget.new_folder("Все заклинания", None)
+
+            for spell_data in self.Spells.select("spells", "id, name_ru, level, school", text_filter=text_filter):
+                folder.new_spell(*spell_data)
+
+            if not bool(folder.spells) and bool(folder.text(0)):
+                del folder
+
+        elif currentIndex == 3:
+            self.treeWidget.new_folder("Классы", None)
+            # --- Classes ---
+            folders = set()
+            for spell_classes in self.Spells.select("spells", "classes"):
+                for spell_class in spell_classes.split(", "):
+                    print(spell_class)
+                    folders.add(spell_class)
+
+            folders = sorted(list(folders))
+
+            for folder_name in folders:
+                if not bool(folder_name):
+                    continue
+                folder = self.treeWidget.new_folder(folder_name, None)
+
+                for spell_data in self.Spells.select("spells", "id, name_ru, level, school",
+                                                     filters=f"classes LIKE '%{folder_name}%'",
+                                                     text_filter=text_filter):
+                    folder.new_spell(*spell_data)
+
+                if not bool(folder.spells) and bool(folder.text(0)):
+                    del folder
+
+            folders = self.treeWidget.folders
+            for folder in folders:
+                folder.setText(0, folder.text(0).capitalize().replace("tce", " TCE"))
+
+            self.treeWidget.new_folder("", None)
+            self.treeWidget.new_folder("Подклассы", None)
+            # --- archetypes ---
+            folders = set()
+            for spell_classes in self.Spells.select("spells", "archetypes"):
+                for spell_class in spell_classes.split(", "):
+                    print(spell_class)
+                    folders.add(spell_class)
+
+            folders = sorted(list(folders))
+
+            for folder_name in folders:
+                if not bool(folder_name):
+                    continue
+                folder = self.treeWidget.new_folder(folder_name, None)
+
+                for spell_data in self.Spells.select("spells", "id, name_ru, level, school",
+                                                     filters=f"archetypes LIKE '%{folder_name}%'",
+                                                     text_filter=text_filter):
+                    folder.new_spell(*spell_data)
+
+            folders = self.treeWidget.folders
+            for folder in folders:
+                folder.setText(0, folder.text(0).capitalize().replace("tce", " TCE"))
+
+        else:
+            folders = set()
+            for spell_stat in self.Spells.select("spells", index_to_stat_dict[currentIndex]):
+                folders.add(spell_stat)
+
+            folders = sorted(list(folders))
+            print(folders)
+
+            for folder_name in folders:
+                folder = self.treeWidget.new_folder(str(folder_name), None)
+
+                # print(folder_name)
+                print(f"{index_to_stat_dict[currentIndex]} = '{folder_name}'")
+                for spell_data in self.Spells.select("spells", "id, name_ru, level, school",
+                                                     filters=f"{index_to_stat_dict[currentIndex]} = '{folder_name}'",
+                                                     text_filter=text_filter):
+                    folder.new_spell(*spell_data)
+
+                if not bool(folder.spells) and bool(folder.text(0)):
+                    del folder
+
+            folders = self.treeWidget.folders
+            for folder in folders:
+                text = folder.text(0).capitalize()
+                if currentIndex == 1:
+                    text += " уровень"
+                if text == "0 уровень":
+                    text = "Заговор"
+
+                folder.setText(0, text)
+
+        # folders = self.Characters.select("folders", "*")
+        # folders = sorted(folders, key=lambda x: x[-1])
+        #
+        # for folder_id, name, index in folders:
+        #     folder = self.treeWidget.new_folder(name, folder_id)
+        #
+        #     characters_id = self.Characters.select("characters_in_folder", "character_id",
+        #                                            filters=f"folder_id = {folder_id}")
+        #
+        #     if len(characters_id) == 0:
+        #         characters = []
+        #
+        #     elif len(characters_id) > 1:
+        #         characters = self.Characters.select("character_list", "id, name, race, class, level",
+        #                                             filters=f"id in {tuple(characters_id)}", sort=sort,
+        #                                             reversed=is_reversed)
+        #
+        #     else:
+        #         characters = self.Characters.select("character_list", "id, name, race, class, level",
+        #                                             filters=f"id = {characters_id[0]}")
+        #
+        #     for character in characters:
+        #         folder.new_character(*character)
+
+        self.treeWidget.expend_folders(Expanded_data)
+
+
 class ShooseCharacter(QMainWindow, ShooseCharacterUI):
     def __init__(self, parent=None):
         QMainWindow.__init__(self)
         uic.loadUi('ui/shoose_character_window.ui', self)
-        self.setWindowTitle("Интерактивный лист персонажа")
+        self.setWindowTitle("Персонажи")
 
         self.Characters = Sqlite3Client(sqlite3.connect("db/Сharacters.db"))
 
@@ -281,7 +496,7 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
         self.treeWidget.itemClicked.connect(self.open_information)
         self.treeWidget.itemDoubleClicked.connect(self.open_character)
 
-        # --- Настройка кнопок ---
+        # --- Настройка сигналов ---
 
         self.lineEdit_find.textChanged.connect(self.update_treeview)
 

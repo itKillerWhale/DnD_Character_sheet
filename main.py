@@ -1,7 +1,7 @@
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from windows import ShooseCharacter
+from windows import ShooseCharacter, ShooseSpell
 
 import sys
 
@@ -32,7 +32,7 @@ app = QApplication(sys.argv)
 
 app.setWindowIcon(QIcon('image/icons/main.ico'))
 
-window = ShooseCharacter()
+window = ShooseSpell()
 window.show()
 
 sys.excepthook = my_excepthook
