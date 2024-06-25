@@ -24,6 +24,9 @@
     <normaloff>../image/icons/main.ico</normaloff>../image/icons/main.ico</iconset>
   </property>
   <widget class="QWidget" name="centralwidget">
+   <property name="styleSheet">
+    <string notr="true"/>
+   </property>
    <layout class="QHBoxLayout" name="horizontalLayout_2">
     <property name="spacing">
      <number>0</number>
@@ -76,7 +79,7 @@
           </size>
          </property>
          <property name="currentIndex">
-          <number>0</number>
+          <number>1</number>
          </property>
          <widget class="QWidget" name="tab_8">
           <attribute name="title">
@@ -1656,7 +1659,7 @@
             </rect>
            </property>
           </widget>
-          <widget class="QScrollArea" name="scrollArea">
+          <widget class="QScrollArea" name="scrollArea_0">
            <property name="geometry">
             <rect>
              <x>34</x>
@@ -1664,6 +1667,24 @@
              <width>188</width>
              <height>121</height>
             </rect>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>188</width>
+             <height>121</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>188</width>
+             <height>201</height>
+            </size>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
            </property>
            <property name="widgetResizable">
             <bool>true</bool>
@@ -1677,9 +1698,32 @@
               <height>119</height>
              </rect>
             </property>
+            <property name="maximumSize">
+             <size>
+              <width>16777192</width>
+              <height>16777215</height>
+             </size>
+            </property>
+            <layout class="QVBoxLayout" name="verticalLayout_6">
+             <property name="spacing">
+              <number>3</number>
+             </property>
+             <property name="leftMargin">
+              <number>3</number>
+             </property>
+             <property name="topMargin">
+              <number>3</number>
+             </property>
+             <property name="rightMargin">
+              <number>3</number>
+             </property>
+             <property name="bottomMargin">
+              <number>3</number>
+             </property>
+            </layout>
            </widget>
           </widget>
-          <widget class="QScrollArea" name="scrollArea_2">
+          <widget class="QScrollArea" name="scrollArea_1">
            <property name="geometry">
             <rect>
              <x>34</x>
@@ -1687,6 +1731,24 @@
              <width>188</width>
              <height>201</height>
             </rect>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>188</width>
+             <height>201</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>188</width>
+             <height>201</height>
+            </size>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
            </property>
            <property name="widgetResizable">
             <bool>true</bool>
@@ -1702,7 +1764,7 @@
             </property>
            </widget>
           </widget>
-          <widget class="QScrollArea" name="scrollArea_3">
+          <widget class="QScrollArea" name="scrollArea_2">
            <property name="geometry">
             <rect>
              <x>34</x>
@@ -1710,6 +1772,24 @@
              <width>188</width>
              <height>201</height>
             </rect>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>188</width>
+             <height>201</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>188</width>
+             <height>201</height>
+            </size>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
            </property>
            <property name="widgetResizable">
             <bool>true</bool>
@@ -1725,7 +1805,7 @@
             </property>
            </widget>
           </widget>
-          <widget class="QScrollArea" name="scrollArea_4">
+          <widget class="QScrollArea" name="scrollArea_3">
            <property name="geometry">
             <rect>
              <x>238</x>
@@ -1733,6 +1813,24 @@
              <width>188</width>
              <height>194</height>
             </rect>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>188</width>
+             <height>194</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>188</width>
+             <height>194</height>
+            </size>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
            </property>
            <property name="widgetResizable">
             <bool>true</bool>
@@ -1748,7 +1846,7 @@
             </property>
            </widget>
           </widget>
-          <widget class="QScrollArea" name="scrollArea_5">
+          <widget class="QScrollArea" name="scrollArea_4">
            <property name="geometry">
             <rect>
              <x>238</x>
@@ -1756,6 +1854,24 @@
              <width>188</width>
              <height>194</height>
             </rect>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>188</width>
+             <height>194</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>188</width>
+             <height>194</height>
+            </size>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
            </property>
            <property name="widgetResizable">
             <bool>true</bool>
@@ -1771,7 +1887,7 @@
             </property>
            </widget>
           </widget>
-          <widget class="QScrollArea" name="scrollArea_6">
+          <widget class="QScrollArea" name="scrollArea_5">
            <property name="geometry">
             <rect>
              <x>238</x>
@@ -1779,6 +1895,24 @@
              <width>188</width>
              <height>141</height>
             </rect>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>188</width>
+             <height>141</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>188</width>
+             <height>141</height>
+            </size>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
            </property>
            <property name="widgetResizable">
             <bool>true</bool>
@@ -1794,7 +1928,7 @@
             </property>
            </widget>
           </widget>
-          <widget class="QScrollArea" name="scrollArea_7">
+          <widget class="QScrollArea" name="scrollArea_6">
            <property name="geometry">
             <rect>
              <x>440</x>
@@ -1802,6 +1936,24 @@
              <width>188</width>
              <height>133</height>
             </rect>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>188</width>
+             <height>133</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>188</width>
+             <height>133</height>
+            </size>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
            </property>
            <property name="widgetResizable">
             <bool>true</bool>
@@ -1817,7 +1969,7 @@
             </property>
            </widget>
           </widget>
-          <widget class="QScrollArea" name="scrollArea_8">
+          <widget class="QScrollArea" name="scrollArea_7">
            <property name="geometry">
             <rect>
              <x>440</x>
@@ -1825,6 +1977,24 @@
              <width>188</width>
              <height>133</height>
             </rect>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>188</width>
+             <height>133</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>188</width>
+             <height>133</height>
+            </size>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
            </property>
            <property name="widgetResizable">
             <bool>true</bool>
@@ -1840,7 +2010,7 @@
             </property>
            </widget>
           </widget>
-          <widget class="QScrollArea" name="scrollArea_9">
+          <widget class="QScrollArea" name="scrollArea_8">
            <property name="geometry">
             <rect>
              <x>440</x>
@@ -1848,6 +2018,24 @@
              <width>188</width>
              <height>101</height>
             </rect>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>188</width>
+             <height>101</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>188</width>
+             <height>101</height>
+            </size>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
            </property>
            <property name="widgetResizable">
             <bool>true</bool>
@@ -1863,7 +2051,7 @@
             </property>
            </widget>
           </widget>
-          <widget class="QScrollArea" name="scrollArea_10">
+          <widget class="QScrollArea" name="scrollArea_9">
            <property name="geometry">
             <rect>
              <x>440</x>
@@ -1871,6 +2059,24 @@
              <width>188</width>
              <height>110</height>
             </rect>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>188</width>
+             <height>110</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>188</width>
+             <height>110</height>
+            </size>
+           </property>
+           <property name="verticalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
            </property>
            <property name="widgetResizable">
             <bool>true</bool>
@@ -1886,6 +2092,41 @@
             </property>
            </widget>
           </widget>
+          <widget class="QLineEdit" name="lineEdit_class_2">
+           <property name="geometry">
+            <rect>
+             <x>60</x>
+             <y>75</y>
+             <width>211</width>
+             <height>16</height>
+            </rect>
+           </property>
+           <property name="font">
+            <font>
+             <pointsize>8</pointsize>
+            </font>
+           </property>
+           <property name="text">
+            <string>Класс</string>
+           </property>
+          </widget>
+          <widget class="QPushButton" name="pushButton_spells">
+           <property name="geometry">
+            <rect>
+             <x>192</x>
+             <y>159</y>
+             <width>23</width>
+             <height>23</height>
+            </rect>
+           </property>
+           <property name="text">
+            <string/>
+           </property>
+           <property name="icon">
+            <iconset>
+             <normaloff>images/clipboard.png</normaloff>images/clipboard.png</iconset>
+           </property>
+          </widget>
          </widget>
         </widget>
        </item>
@@ -1897,7 +2138,7 @@
           </font>
          </property>
          <property name="currentIndex">
-          <number>0</number>
+          <number>1</number>
          </property>
          <widget class="QWidget" name="tab_5">
           <attribute name="title">

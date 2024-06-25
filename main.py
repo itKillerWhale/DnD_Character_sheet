@@ -1,9 +1,12 @@
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
-from windows import ShooseCharacter, ShooseSpell
+from windows.Spells import ShooseSpell
+from windows.Characters import List, ShooseCharacter
 
 import sys
+
+from test import Test
 
 
 def my_excepthook(type, value, tback):
@@ -30,9 +33,9 @@ sys.excepthook = my_excepthook
 
 app = QApplication(sys.argv)
 
-app.setWindowIcon(QIcon('image/icons/main.ico'))
+app.setWindowIcon(QIcon('image/logo.jpg'))
 
-window = ShooseSpell()
+window = ShooseCharacter()
 window.show()
 
 sys.excepthook = my_excepthook

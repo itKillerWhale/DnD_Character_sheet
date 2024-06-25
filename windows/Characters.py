@@ -3,457 +3,21 @@ import os
 import shutil
 import sqlite3
 
-from PyQt6 import uic
+from PyQt6 import uic, QtCore
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QUndoStack, QKeySequence, QPixmap, QIcon, QFont, QContextMenuEvent, QAction
+from PyQt6.QtGui import QUndoStack, QKeySequence, QPixmap, QIcon
 from PyQt6.QtWidgets import QMessageBox, QMainWindow, QGroupBox, QGridLayout, QLineEdit, QScrollArea, QFileDialog, \
-    QTreeWidgetItem, QHeaderView, QInputDialog, QTreeWidget, QMenu, QDialog, QPushButton
+    QHeaderView, QInputDialog
 
 from constants import *
 
 from ui.list import Ui_MainWindow as ListUI
 from ui.shoose_character_window import Ui_MainWindow as ShooseCharacterUI
-from ui.comboboxdialog import Ui_Dialog as ComboBoxDialogUI
-from ui.shoose_spell_window import Ui_MainWindow as ShooseSpellUI
-
-
-# ----- Декораторы -----
-# --- Декоратор против зацикливания функций в классе ---
-def anti_looping(func):
-    def wrapper(self, *args, **kwargs):
-        if self.k != 1: return
-
-        self.k -= 1
-
-        func(self)
-
-        self.k += 1
-
-    return wrapper
-
-
-# --- Декоратор пропускающий только нужные данные в функцию ---
-def is_selected(text):
-    def decorator(func):
-        def wrapper(self, *args, **kwargs):
-            if bool(text):
-                widgets_list = self.treeWidget.selectedItems()
-                if not bool(widgets_list):
-                    _ = QMessageBox.warning(
-                        self,
-                        "Ошибка",
-                        "Ни один персонаж или папка не выделены",
-                        buttons=QMessageBox.StandardButton.Ok,
-                        defaultButton=QMessageBox.StandardButton.Ok,
-                    )
-
-                if widgets_list[0].get_info()[1] != text:
-                    _ = QMessageBox.warning(
-                        self,
-                        "Ошибка",
-                        "Вы не можете произвести это действие с выделенным на данный момент предметом",
-                        buttons=QMessageBox.StandardButton.Ok,
-                        defaultButton=QMessageBox.StandardButton.Ok,
-                    )
-
-            func(self)
-
-        return wrapper
-
-    return decorator
-
-
-# ----- Вспомогательные классы -----
-class Sqlite3Client:
-    def __init__(self, connection: sqlite3.Connection):
-        self.connection = connection
-        self.cursor = connection.cursor()
-
-        self.tables = list(
-            map(lambda t: t, self.cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")))
-
-    def select(self, db_name: str, args: str, filters=None, text_filter=None, sort=None, reversed=False) -> list:
-        print(filters)
-        # --- Отлов неправильных значений ---
-        if not (bool(db_name) and bool(args)):
-            raise Exception("Имя или аргументы пустые")
-
-        # --- Работа с данными ---
-        data = list(self.cursor.execute(
-            f"""SELECT {args} FROM {db_name}""" + (f""" WHERE {filters}""" if bool(filters) else "")))
-
-        if len(args.split(", ")) == 1 and args != "*":
-            data = list(map(lambda x: x[0], data))
-
-        if bool(text_filter):
-            data = list(
-                filter(lambda character: any([text_filter in collum.lower() for collum in map(str, character[1:])]),
-                       data))
-
-        if bool(sort):
-            data = list(sorted(data, key=lambda x: x[args.split(", ").index(sort)]))
-
-        if reversed:
-            data = data[::-1]
-
-        return data
-
-    def delete(self, db_name: str, filters: str):
-        # --- Отлов неправильных значений ---
-        if not (bool(db_name) and bool(filters)):
-            raise Exception("Имя или филтры пустые")
-
-        # --- Работа с данными ---
-        self.cursor.execute(f"""DELETE FROM {db_name} WHERE {filters}""")
-
-        self.connection.commit()
-
-    def insert(self, db_name: str, collums_name: [str], collums_values: list):
-        # --- Отлов неправильных значений ---
-        if not (bool(db_name) and bool(collums_name) and bool(collums_values)):
-            raise Exception("Имя или значения пустые")
-
-        print()
-        if len(collums_name) != len(collums_values):
-            raise ValueError("Кол-во значений не равно")
-
-        # --- Работа с данными ---
-        self.cursor.execute(f"""INSERT INTO {db_name} {tuple(collums_name)} 
-        VALUES ({', '.join(['?'] * len(collums_values))})""", collums_values)
-
-        self.connection.commit()
-
-
-# ----- Измененные виджеты -----
-
-
-class TreeWidgetItem(QTreeWidgetItem):
-    fontCharacters = QFont("MS Shell Dlg 2", 10)
-
-    def __init__(self, id, type, *args, **kvargs, ):
-        super().__init__(*args, **kvargs)
-
-        self.id = id
-        self.type = type
-
-        self.characters = []
-        self.spells = []
-
-    def get_info(self) -> (int, str):
-        return (self.id, self.type)
-
-    def new_character(self, character_id, character_name, character_race, character_class, character_level):
-        if not self.type == "folder":
-            raise Exception("Это не являеться папкой")
-
-        character = TreeWidgetItem(character_id, "character", (character_name, character_race, character_class,
-                                                               str(character_level) + " lvl"))
-        character.setFont(0, TreeWidgetItem.fontCharacters)
-
-        self.characters.append(character)
-
-        self.addChild(character)
-
-    def new_spell(self, spell_id, spell_name, spell_level, spell_school):
-        if not self.type == "folder":
-            raise Exception("Это не являеться папкой")
-
-        spell = TreeWidgetItem(spell_id, "spell", (
-            spell_name, spell_school.capitalize(), str(spell_level) + " уровень" if spell_level != 0 else "Заговор"))
-        spell.setFont(0, TreeWidgetItem.fontCharacters)
-
-        self.spells.append(spell)
-
-        self.addChild(spell)
-
-
-class TreeWidget(QTreeWidget):
-    fontFolder = QFont("MS Shell Dlg 2", 12)
-
-    def __init__(self, window: QMainWindow, *args, **kvargs, ):
-        super().__init__(*args, **kvargs)
-
-        self.window = window
-
-        self.menu_character = QMenu(parent=self)
-        self.menu_character.addAction(self.window.actionOpen)
-        self.menu_character.addSeparator()
-        self.menu_character.addAction(self.window.actionAdd_to_folder)
-        self.menu_character.addAction(self.window.actionDelete_from_folder)
-        self.menu_character.addSeparator()
-        self.menu_character.addAction(self.window.actionDelete)
-
-        self.menu_folder = QMenu(parent=self)
-        self.menu_folder.addAction(window.actionNew_folder)
-        self.menu_folder.addAction(window.actionDelete_folder)
-
-        self.menu_treeWidget = QMenu(parent=self)
-        self.menu_treeWidget.addAction(window.actionNew_folder)
-
-        self.folders = []
-
-    def contextMenuEvent(self, event: QContextMenuEvent):
-        widget = self.selectedItems()
-
-        if not bool(widget):
-            self.menu_treeWidget.move(event.globalX(), event.globalY())
-            self.menu_treeWidget.show()
-
-        widget = widget[0]
-
-        id, type = widget.get_info()
-
-        if type == "character":
-            self.menu_character.move(event.globalX(), event.globalY())
-            self.menu_character.show()
-
-        elif type == "folder":
-            self.menu_folder.move(event.globalX(), event.globalY())
-            self.menu_folder.show()
-
-        elif type == "All" or type == "Likes":
-            self.menu_treeWidget.move(event.globalX(), event.globalY())
-            self.menu_treeWidget.show()
-
-    def new_folder(self, folder_name: str, folder_id: int or None, icon=None) -> TreeWidgetItem:
-        folder = TreeWidgetItem(folder_id, "folder", self)
-        self.addTopLevelItem(folder)
-        if bool(icon): folder.setIcon(0, icon)
-        folder.setText(0, folder_name)
-        folder.setFont(0, TreeWidget.fontFolder)
-
-        self.folders.append(folder)
-
-        return folder
-
-    def get_expanded_folders(self) -> dict:
-        folders_name = list(map(lambda folder: folder.text(0), self.folders))
-        expanded_list = list(map(lambda folder: folder.isExpanded(), self.folders))
-        expanded_folders_dict = dict(zip(folders_name, expanded_list))
-
-        return expanded_folders_dict
-
-    def expend_folders(self, expanded_folders_dict: [TreeWidgetItem]):
-        if not bool(expanded_folders_dict):
-            return
-
-        folders_name = list(map(lambda folder: folder.text(0), self.folders))
-        for folder_name, f in list(expanded_folders_dict.items()):
-            if folder_name in folders_name:
-                self.folders[folders_name.index(folder_name)].setExpanded(f)
-
-    def clear(self):
-        super().clear()
-        self.folders = []
-
-
-# ----- Классы окон -----
-class ComboBoxDialog(QDialog, ComboBoxDialogUI):
-    def __init__(self, folders: list, parent=None):
-        QDialog.__init__(self, parent=parent)
-        uic.loadUi('ui/comboboxdialog.ui', self)
-
-        for id, name, index in folders:
-            self.comboBox.addItem(name)
-
-
-class ShooseSpell(QMainWindow, ShooseSpellUI):
-    def __init__(self, parent=None):
-        QMainWindow.__init__(self)
-        uic.loadUi('ui/shoose_spell_window.ui', self)
-        self.setWindowTitle("Заклинания")
-
-        self.Spells = Sqlite3Client(sqlite3.connect("db/D&D.db"))
-
-        self.verticalLayout_2.maximumSize().setWidth(480)
-
-        # --- treeWidget ---
-        self.treeWidget = TreeWidget(self)
-        self.centralwidget.layout().addWidget(self.treeWidget, 1, 0)
-
-        self.treeWidget.setColumnCount(3)
-        header = self.treeWidget.header()
-        self.treeWidget.setHeaderLabels(["Название", "Школа", "Уровень"])
-
-        header.resizeSection(1, 10)
-        header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-
-        # --- Настройка фильтров ---
-        schools = set()
-        for spell_stat in self.Spells.select("spells", "school"):
-            schools.add(spell_stat)
-
-        schools = sorted(list(schools))
-        self.comboBox_school.addItems(schools)
-        self.index_to_school_dict = dict(zip(range(1, len(schools) + 1), schools))
-
-        classes = set()
-        for spell_classes in self.Spells.select("spells", "classes"):
-            for spell_class in spell_classes.split(", "):
-                if not bool(spell_class):
-                    continue
-                spell_class = spell_class.replace("TCE", "").capitalize()
-                classes.add(spell_class)
-
-        classes = sorted(list(classes))
-        self.comboBox_class.addItems(classes)
-        self.index_to_classes_dict = dict(zip(range(1, len(classes) + 1), classes))
-
-        # --- Настройка сигналов ---
-
-        self.comboBox.activated.connect(self.update_treeview)
-
-        self.lineEdit_find.textChanged.connect(self.update_treeview)
-
-        self.update_treeview()
-
-    def update_treeview(self):
-        Expanded_data = []
-        if bool(self.treeWidget.folders):
-            Expanded_data = self.treeWidget.get_expanded_folders()
-
-        self.treeWidget.clear()
-
-        text_filter = self.lineEdit_find.text().lower()
-        # sort = "name, race, class, level".split(", ")[self.comboBox.currentIndex()]
-        is_reversed = self.pushButton_is_reversed.text() == "↓"
-
-        # --- Вкладка Likes ---
-        # folder = self.treeWidget.new_folder("Likes", None, icon=QIcon("image/icons/likes.ico"))
-        # character_id = self.Characters.select("likes", "id")
-        # characters = self.Characters.select("character_list", "id, name, race, class, level",
-        #                                     text_filter=text_filter,
-        #                                     filters=f"id = {character_id[0]}" if len(
-        #                                         character_id) == 1 else f"id in {tuple(character_id)}",
-        #                                     sort=sort, reversed=is_reversed)
-        #
-        # for character in characters:
-        #     folder.new_character(*character)
-
-        # --- Остальные вкладки ---
-        index_to_stat_dict = {1: "level", 2: "school"}
-        currentIndex = self.comboBox.currentIndex()
-        if currentIndex == 0:
-            folder = self.treeWidget.new_folder("Все заклинания", None)
-
-            for spell_data in self.Spells.select("spells", "id, name_ru, level, school", text_filter=text_filter):
-                folder.new_spell(*spell_data)
-
-            if not bool(folder.spells) and bool(folder.text(0)):
-                del folder
-
-        elif currentIndex == 3:
-            self.treeWidget.new_folder("Классы", None)
-            # --- Classes ---
-            folders = set()
-            for spell_classes in self.Spells.select("spells", "classes"):
-                for spell_class in spell_classes.split(", "):
-                    print(spell_class)
-                    folders.add(spell_class)
-
-            folders = sorted(list(folders))
-
-            for folder_name in folders:
-                if not bool(folder_name):
-                    continue
-                folder = self.treeWidget.new_folder(folder_name, None)
-
-                for spell_data in self.Spells.select("spells", "id, name_ru, level, school",
-                                                     filters=f"classes LIKE '%{folder_name}%'",
-                                                     text_filter=text_filter):
-                    folder.new_spell(*spell_data)
-
-                if not bool(folder.spells) and bool(folder.text(0)):
-                    del folder
-
-            folders = self.treeWidget.folders
-            for folder in folders:
-                folder.setText(0, folder.text(0).capitalize().replace("tce", " TCE"))
-
-            self.treeWidget.new_folder("", None)
-            self.treeWidget.new_folder("Подклассы", None)
-            # --- archetypes ---
-            folders = set()
-            for spell_classes in self.Spells.select("spells", "archetypes"):
-                for spell_class in spell_classes.split(", "):
-                    print(spell_class)
-                    folders.add(spell_class)
-
-            folders = sorted(list(folders))
-
-            for folder_name in folders:
-                if not bool(folder_name):
-                    continue
-                folder = self.treeWidget.new_folder(folder_name, None)
-
-                for spell_data in self.Spells.select("spells", "id, name_ru, level, school",
-                                                     filters=f"archetypes LIKE '%{folder_name}%'",
-                                                     text_filter=text_filter):
-                    folder.new_spell(*spell_data)
-
-            folders = self.treeWidget.folders
-            for folder in folders:
-                folder.setText(0, folder.text(0).capitalize().replace("tce", " TCE"))
-
-        else:
-            folders = set()
-            for spell_stat in self.Spells.select("spells", index_to_stat_dict[currentIndex]):
-                folders.add(spell_stat)
-
-            folders = sorted(list(folders))
-            print(folders)
-
-            for folder_name in folders:
-                folder = self.treeWidget.new_folder(str(folder_name), None)
-
-                # print(folder_name)
-                print(f"{index_to_stat_dict[currentIndex]} = '{folder_name}'")
-                for spell_data in self.Spells.select("spells", "id, name_ru, level, school",
-                                                     filters=f"{index_to_stat_dict[currentIndex]} = '{folder_name}'",
-                                                     text_filter=text_filter):
-                    folder.new_spell(*spell_data)
-
-                if not bool(folder.spells) and bool(folder.text(0)):
-                    del folder
-
-            folders = self.treeWidget.folders
-            for folder in folders:
-                text = folder.text(0).capitalize()
-                if currentIndex == 1:
-                    text += " уровень"
-                if text == "0 уровень":
-                    text = "Заговор"
-
-                folder.setText(0, text)
-
-        # folders = self.Characters.select("folders", "*")
-        # folders = sorted(folders, key=lambda x: x[-1])
-        #
-        # for folder_id, name, index in folders:
-        #     folder = self.treeWidget.new_folder(name, folder_id)
-        #
-        #     characters_id = self.Characters.select("characters_in_folder", "character_id",
-        #                                            filters=f"folder_id = {folder_id}")
-        #
-        #     if len(characters_id) == 0:
-        #         characters = []
-        #
-        #     elif len(characters_id) > 1:
-        #         characters = self.Characters.select("character_list", "id, name, race, class, level",
-        #                                             filters=f"id in {tuple(characters_id)}", sort=sort,
-        #                                             reversed=is_reversed)
-        #
-        #     else:
-        #         characters = self.Characters.select("character_list", "id, name, race, class, level",
-        #                                             filters=f"id = {characters_id[0]}")
-        #
-        #     for character in characters:
-        #         folder.new_character(*character)
-
-        self.treeWidget.expend_folders(Expanded_data)
+from windows.Spells import ShooseSpell
+# from main import ShooseSpell
+from ui.character import Ui_MainWindow as CharacterUI
+
+from others import Sqlite3Client, TreeWidget, TreeWidgetItem, is_selected, anti_looping, ComboBoxDialog
 
 
 class ShooseCharacter(QMainWindow, ShooseCharacterUI):
@@ -604,7 +168,7 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
 
         pixmap = QPixmap(f"image/characters/{character_id}.png")
         if pixmap.isNull():
-            pixmap = QPixmap("image/characters/stub.png")
+            pixmap = QPixmap("image/characters/stub.jpg")
         self.label_image.setPixmap(
             pixmap.scaled(self.label_image.width(), self.label_image.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
@@ -656,8 +220,8 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
 
         if ok:
             folder_id = folders[self.dialog.comboBox.currentIndex()][-1]
-            print(folders)
-            print(folder_id)
+            # print(folders)
+            # print(folder_id)
 
             with sqlite3.connect('db/Сharacters.db') as con:
                 cursor = con.cursor()
@@ -710,7 +274,7 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
 
                 cursor.execute(f"""DELETE FROM character_list WHERE id = {character_id}""")
                 cursor.execute(f"""DELETE FROM characters_in_folder WHERE character_id = {character_id}""")
-                cursor.execute(f"""DELETE FROM likes WHERE character_id = {character_id}""")
+                cursor.execute(f"""DELETE FROM likes WHERE id = {character_id}""")
 
                 con.commit()
 
@@ -742,14 +306,14 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
                     return
 
                 idexes = list(map(lambda n: n[0], cursor.execute(f"""SELECT folder_index FROM folders""")))
-                print(idexes)
+                # print(idexes)
 
                 if bool(idexes):
                     index = max(idexes) + 1
                 else:
                     index = 1
 
-                print(index)
+                # print(index)
                 cursor.execute(f"""INSERT INTO folders (name, folder_index) VALUES (?, ?)""", (text, index))
 
         self.update_treeview()
@@ -785,6 +349,11 @@ class ShooseCharacter(QMainWindow, ShooseCharacterUI):
 # -------------------------------------------------------
 # #######################################################
 # -------------------------------------------------------
+# class List(QMainWindow, ListUI):
+#     def __init__(self, id, parent=None):
+#         QMainWindow.__init__(self)
+#         uic.loadUi('ui/list.ui', self)
+#         self.setWindowTitle("Интерактивный лист персонажа")
 class List(QMainWindow, ListUI):
     def __init__(self, id, parent=None):
         QMainWindow.__init__(self)
@@ -792,6 +361,9 @@ class List(QMainWindow, ListUI):
         self.setWindowTitle("Интерактивный лист персонажа")
 
         self.Characters = Sqlite3Client(sqlite3.connect("db/Сharacters.db"))
+        self.Spells = Sqlite3Client(sqlite3.connect("db/Spells.db"))
+
+        # self.pushButton_character.setStyleSheet("background-image: url(images/icons/clipboard.png);")
 
         if parent:
             parent.close()
@@ -803,33 +375,33 @@ class List(QMainWindow, ListUI):
 
         # ----- Работа с Menu -----
         # --- Создание шорткатов ---
-        undo = QKeySequence("Ctrl+Z")
-        self.action_undo.setShortcut(undo)
-
-        redo = QKeySequence("Ctrl+Y")
-        self.action_redo.setShortcut(redo)
-
-        new = QKeySequence("Ctrl+N")
-        self.action_new.setShortcut(new)
-
-        save = QKeySequence("Ctrl+S")
-        self.action_save.setShortcut(save)
-
-        open = QKeySequence("Ctrl+O")
-        self.action_open.setShortcut(open)
-
-        generate_name = QKeySequence("Alt+N")
-        self.action_name.setShortcut(generate_name)
+        # undo = QKeySequence("Ctrl+Z")
+        # self.action_undo.setShortcut(undo)
+        #
+        # redo = QKeySequence("Ctrl+Y")
+        # self.action_redo.setShortcut(redo)
+        #
+        # new = QKeySequence("Ctrl+N")
+        # self.action_new.setShortcut(new)
+        #
+        # save = QKeySequence("Ctrl+S")
+        # self.action_save.setShortcut(save)
+        #
+        # open = QKeySequence("Ctrl+O")
+        # self.action_open.setShortcut(open)
+        #
+        # generate_name = QKeySequence("Alt+N")
+        # self.action_name.setShortcut(generate_name)
 
         # --- Подключение кнопок к функциям ---
-        self.action_save.triggered.connect(self.save)
-        self.action_undo.triggered.connect(self.undo)
-        self.action_redo.triggered.connect(self.redo)
-        self.menu_edit.triggered.connect(self.update_undo_redo)
-        self.action_open.triggered.connect(self.open)
-        self.action_new.triggered.connect(self.new)
+        # self.action_save.triggered.connect(self.save)
+        # self.action_undo.triggered.connect(self.undo)
+        # self.action_redo.triggered.connect(self.redo)
+        # self.menu_edit.triggered.connect(self.update_undo_redo)
+        # self.action_open.triggered.connect(self.open)
+        # self.action_new.triggered.connect(self.new)
 
-        self.action_name.triggered.connect(self.generate_name)
+        # self.action_name.triggered.connect(self.generate_name)
 
         # ----- Списки всех виджетов -----
         # --- checkBoxes ----
@@ -870,10 +442,10 @@ class List(QMainWindow, ListUI):
 
         # --- lineEdits ---
         self.lineEdit_list = [self.lineEdit_name, self.lineEdit_race, self.lineEdit_class, self.lineEdit_background,
-                              self.lineEdit_worldview, self.lineEdit_player_name]
+                              self.lineEdit_worldview, self.lineEdit_player_name, self.lineEdit_class]
         self.tab_lineEdit_list = [self.tab_lineEdit_name, self.tab_lineEdit_race, self.tab_lineEdit_class,
                                   self.tab_lineEdit_background, self.tab_lineEdit_worldview,
-                                  self.tab_lineEdit_player_name]
+                                  self.tab_lineEdit_player_name, self.lineEdit_class_2]
 
         # --- textEdit ---
         self.textEdit_list = [self.textEdit_personal_traits, self.textEdit_ideals, self.textEdit_attachments,
@@ -967,6 +539,8 @@ class List(QMainWindow, ListUI):
 
         self.pushButton_shoose_file.clicked.connect(self.shoose_image)
         self.pushButton_delete_image.clicked.connect(self.delete_image)
+
+        self.pushButton_spells.clicked.connect(self.open_spells)
 
         self.checkBox_inspiration.stateChanged.connect(self.update_inspiration)
         self.comboBox_inspiration.activated.connect(self.update_inspiration)
@@ -1089,7 +663,7 @@ class List(QMainWindow, ListUI):
 
         pixmap = QPixmap(f"image/characters/{self.id}.png")
         if pixmap.isNull():
-            pixmap = QPixmap("image/characters/stub.png")
+            pixmap = QPixmap("image/characters/stub.jpg")
         self.label_image.setPixmap(
             pixmap.scaled(self.label_image.width(), self.label_image.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
@@ -1111,6 +685,10 @@ class List(QMainWindow, ListUI):
         self.label_initiative.setText(self.label_dexterity.text())
 
         self.update_skills(self)
+
+    def open_spells(self):
+        self.window = ShooseSpell(self)
+        self.window.show()
 
     @anti_looping
     def update_skills(self):
@@ -1442,7 +1020,7 @@ class List(QMainWindow, ListUI):
 
             pixmap = QPixmap(get_photo)
             if pixmap.isNull():
-                pixmap = QPixmap("image/characters/stub.png")
+                pixmap = QPixmap("image/characters/stub.jpg")
             self.label_image.setPixmap(
                 pixmap.scaled(self.label_image.width(), self.label_image.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
@@ -1452,7 +1030,7 @@ class List(QMainWindow, ListUI):
         except FileNotFoundError:
             pass
 
-        pixmap = QPixmap("image/characters/stub.png")
+        pixmap = QPixmap("image/characters/stub.jpg")
         self.label_image.setPixmap(
             pixmap.scaled(self.label_image.width(), self.label_image.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
@@ -1494,7 +1072,7 @@ class List(QMainWindow, ListUI):
     def resizeEvent(self, a0):
         pixmap = QPixmap(f"image/characters/{self.id}.png")
         if pixmap.isNull():
-            pixmap = QPixmap("image/characters/stub.png")
+            pixmap = QPixmap("image/characters/stub.jpg")
         self.label_image.setPixmap(
             pixmap.scaled(self.label_image.width(), self.label_image.height(), Qt.AspectRatioMode.KeepAspectRatio))
 
@@ -1504,6 +1082,8 @@ class List(QMainWindow, ListUI):
         self.action_redo.setEnabled(self.UndoStack.canRedo())
 
     def save(self, character_new=None):
+        self.is_new = False
+
         if not bool(character_new):
             character_new = self.get_character()
 
@@ -1553,3 +1133,12 @@ class List(QMainWindow, ListUI):
         while name == self.lineEdit_name.text():
             name = choice(NAMES_RU)
         self.lineEdit_name.setText(name)
+
+    # ----- Функции спелл-кастинг листа ----
+    def add_spell(self):
+        sender = self.sender()
+
+        shoose_spell = ShooseSpell()
+        print(shoose_spell.Spells)
+
+        # self.Spells.select("spells", "name_ru, application_time, school", filters=f"id = {spell_id}")
